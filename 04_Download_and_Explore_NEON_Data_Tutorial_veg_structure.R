@@ -1,16 +1,17 @@
-## ----packages, eval=FALSE-----------------------------------------------------------------------------------------------------
-## 
-## install.packages("devtools")
-## install.packages("neonUtilities")
-## install.packages("raster")
-## devtools::install_github("NEONScience/NEON-geolocation/geoNEON")
-## install.packages("BiocManager")
-## BiocManager::install("rhdf5")
-## 
+####################################################################################################
+#
+#    --- Last updated: 02.18.2021 By Jane R. Foster <jane.foster@uvm.edu>
+####################################################################################################
 
 
-## ----setup, results='hide', message=FALSE, warning=FALSE----------------------------------------------------------------------
+#---------------- Close all devices and delete all variables. -------------------------------------#
+rm(list=ls(all=TRUE))   # clear workspace
+graphics.off()          # close any open graphics
+closeAllConnections()   # close any open connections to files
+#--------------------------------------------------------------------------------------------------#
 
+
+#--------------------------------------------------------------------------------------------------#
 # load packages
 library(rgdal)
 library(neonUtilities)
@@ -27,64 +28,90 @@ library(viridis)
 library(RColorBrewer)
 library(tidyr)
 library(alluvial)
+## ----packages, eval=FALSE-----------------------------------------------------------------------------------------------------
+## 
+## install.packages("devtools")
+## install.packages("neonUtilities")
+## install.packages("raster")
+## devtools::install_github("NEONScience/NEON-geolocation/geoNEON")
+## install.packages("BiocManager")
+## BiocManager::install("rhdf5")
+## 
 
+#--------------------------------------------------------------------------------------------------#
 
+#--------------------------------------------------------------------------------------------------#
 # Set global option to NOT convert all character variables to factors
 options(stringsAsFactors=F)
 
 makepdf <- "yes" # or "no"
+# Set a save path to match path for downloaded files
+save_path <- "data"
+setwd(save_path)
+
+# Create functions
+# not in
+`%notin%` <- Negate(`%in%`)
+#--------------------------------------------------------------------------------------------------#
 # Modify the file path to match the path to your zip file - Run this again if you want to update your download for new data
 #stackByTable("C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\NEON_struct-woody-plant.zip")
 
-# Set a save path to match path for downloaded files
-save_path <- "C:/Users/janer/Dropbox/code/Rcode/NEON_tutorials/data"
-setwd(save_path)
-#Here, we'll download one tile of Ecosystem structure (Canopy Height Model) (DP3.30015.001) from WREF in 2017.
-
 #We'll read in the vst_mappingandtagging and vst_apparentindividual files:
-
-vegmap0 <- readTableNEON("C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\NEON_struct-woody-plant\\stackedFiles\\vst_mappingandtagging.csv",
-                        "C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\NEON_struct-woody-plant\\stackedFiles\\variables_10098.csv")
-#View(vegmap0)
+vegmap0 <- readTableNEON("NEON_struct-woody-plant\\stackedFiles\\vst_mappingandtagging.csv",
+                        "NEON_struct-woody-plant\\stackedFiles\\variables_10098.csv")
+# Read in plot locations:
+if (!(exists("plots_poly"))) {
+  plotsxy <- readOGR(dsn="All_NEON_TOS_Plots_V7",layer="All_NEON_TOS_Plot_Points")
+  plots_poly <- readOGR(dsn="All_NEON_TOS_Plots_V7",layer="All_NEON_TOS_Plot_Polygons")
+}
 
 # Try excluding rows with pointID == NA to get getLosTOS to work
 #vegmap <- vegmap0[which(!(is.na(vegmap0$pointID))),]
 # The above line subsamples down to only mapped individuals. But we want all individual records for plot summaries!
 
-vegind <- readTableNEON("C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\NEON_struct-woody-plant\\stackedFiles\\vst_apparentindividual.csv",
-                        "C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\NEON_struct-woody-plant\\stackedFiles\\variables_10098.csv")
+vegind <- readTableNEON("NEON_struct-woody-plant\\stackedFiles\\vst_apparentindividual.csv",
+                        "NEON_struct-woody-plant\\stackedFiles\\variables_10098.csv")
 #View(vegind)
-vstvar <- read.csv("C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\NEON_struct-woody-plant\\stackedFiles\\variables_10098.csv")
+vstvar <- read.csv("NEON_struct-woody-plant\\stackedFiles\\variables_10098.csv")
 #View(vstvar)
-vstval <- read.csv("C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\NEON_struct-woody-plant\\stackedFiles\\validation_10098.csv")
+vstval <- read.csv("NEON_struct-woody-plant\\stackedFiles\\validation_10098.csv")
 #View(vstval)
-vplot0 <- read.csv("C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\NEON_struct-woody-plant\\stackedFiles\\vst_perplotperyear.csv")
+vplot0 <- read.csv("NEON_struct-woody-plant\\stackedFiles\\vst_perplotperyear.csv")
 #First, use the geoNEON package to calculate stem locations:
 
-names(vegmap)
+names(vegmap0)
 # If you want to update locations with updated data, run line below
 #vegmap <- geoNEON::getLocTOS(vegmap, "vst_mappingandtagging")
 # Otherwise, read in from saved file
-vegmap <-  read.csv("C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\NEON_struct-woody-plant\\stackedFiles\\vst_vegmap.csv", header=T)
-names(vegmap)
-vegmapOut <- vegmap
-# Stored vegmap is only for mapped individuals. Use all for plot-level summaries
-vegmap <- vegmap0
+vegmapOut <-  read.csv("NEON_struct-woody-plant\\stackedFiles\\vst_vegmap.csv", header=T)
+names(vegmapOut)
+# Stored vegmapOut is only for mapped individuals. Use all for plot-level summaries
 
+# vegmapOut has some duplicate measurements of individualID (trees). Need to slice to use only the most recent record for each tree using date.
+vegmapOut <- vegmapOut %>%
+  arrange(plotID, individualID, desc(date)) %>%
+  group_by(individualID) %>%
+  slice(1) %>%
+  ungroup()
+
+# Repeat for vegmap0
 # Need to save a version of vegmap with locations so you don't have to re-run above lengthly step each time.
+vegmap <- vegmap0 %>%
+  arrange(plotID, individualID, desc(date)) %>%
+  group_by(individualID) %>%
+  slice(1) %>%
+  ungroup()
+
 dim(vegmap)
 #write.csv(vegmap, "NEON_struct-woody-plant\\stackedFiles\\vst_vegmap.csv", row.names=F)
 
-#And now merge the mapping data with the individual measurements. individualID is the linking variable, the others are included to avoid having duplicate columns.
+# And now merge the mapping data with the individual measurements. A subset of trees are mapped.
+# individualID is the linking variable, the others are included to avoid having duplicate columns.
 veg <- merge(vegind, vegmap, by=c("individualID","namedLocation",
-                                  "domainID","siteID","plotID"))
+                                  "domainID","siteID","plotID"), all.x = T)
 
-# OR don't worry about mapping right now, select data for a particular site
-#veg <- veg %>% dplyr::filter(siteID == "GRSM")
-
-#Using the merged data, now we can map the stems in plot 85 (plot chosen at random). Note that the coordinates are in meters but stem diameters are in cm.
+# Create a table of all possible plantStatus from vegind table.
 list_plant_status <- levels(as.factor(vegind$plantStatus))
-#col_plant_status <- as.numeric(as.factor(veg$plantStatus))
 table(veg$plantStatus)
 
 plant_status_symbol <- c(17,3,21,21,10,21,21,21,8,13,12,9,7,4,5,17)
@@ -95,7 +122,7 @@ veg0 <- veg
 
 # Create species codes from scientific names
 names(veg0)
-# Create a list of distinct species to generate 8 digits species codes
+# Create a list of distinct species to generate 8 digits species codes. Keep taxonID as some 8-char sppcodes are duplicated (not distinct)
 spp_distinct <- veg0 %>% dplyr::select(taxonID, scientificName) %>% distinct() %>% arrange(taxonID)
 
 splist <- strsplit(spp_distinct$scientificName, " ")
@@ -112,10 +139,9 @@ spp_distinct$spp <- spplist
 veg0 <- veg0 %>% inner_join(spp_distinct)
 veg <- veg0 %>% inner_join(plant_status_vis,by=c("plantStatus"="plant_status"))
 
-col_plant_status <- veg$plant_status_bg
+#col_plant_status <- veg$plant_status_bg
 
 # Quick tabulation of number of distinct years vegetation structure was measured by plotID
-#plot_date <- vegind %>% group_by(plotID, plotType) %>% select(date) %>% distinct()
 plot_date <- vegind %>% group_by(plotID) %>% dplyr::select(date) %>% distinct()
 plot_date$year <- format(as.Date(plot_date$date, format = '%m/%d/%Y'), '%Y')
 plot_year <- plot_date %>% group_by(plotID) %>% dplyr::select(year) %>% distinct()
@@ -124,7 +150,8 @@ print(n_years_meas)
 
 #########################################################################################################
 # Determine number of sampling events for a site
-sitei <- "BART"
+#########################################################################################################
+sitei <- "HARV"
 events <- vegind %>% dplyr::filter(siteID == sitei) %>% dplyr::select(eventID) %>% distinct() %>% unlist()
 events
 
@@ -138,7 +165,7 @@ vegi <- veg %>% dplyr::filter(siteID == sitei)
 vplot <- vplot0 %>% dplyr::filter(siteID == sitei)
 eventsi <- sort(unique(vegi$eventID.x)) # Note, there are 2 eventID's after join vegind to vegmapping, because mapping coordinates were collected in a particular year.
 
-treeSppFreq <- vegi %>% dplyr::filter(stemDiameter >= 10  & grepl("tree", growthForm)) %>% dplyr::select(spp) %>% table() %>% sort()
+treeSppFreq <- vegi %>% dplyr::filter(stemDiameter >= 10  & grepl("tree", growthForm)) %>% dplyr::select(taxonID) %>% table() %>% sort()
 treeSppFreq
 eventsi
 
@@ -152,27 +179,21 @@ siteTreeColors <- siteTreeColors <- c(brewer.pal(11,"Spectral"), brewer.pal(12, 
 # Reshuffle to randomize
 siteTreeColors <- sample(siteTreeColors, length(siteTreeSpp))
 
+# First, create siteTreeSpp that uses species codes
+siteTreeTaxonID <- siteTreeSpp
+siteTreeSpp <- siteTreeTaxonID %>% data.frame(taxonID = .) %>% inner_join(spp_distinct) %>% select(spp) %>% unname() %>% unlist()
+
 # Try giving conifers dark green colors
 conIndices <- c(grep("abie", siteTreeSpp), grep("pinu", siteTreeSpp), grep("pice", siteTreeSpp), 
               grep("tsug", siteTreeSpp), grep("lari", siteTreeSpp))
 siteTreeColors[conIndices] <- conColors[(length(conColors)-length(conIndices)+1):length(conColors)]
-sppColors <- data.frame(spp = siteTreeSpp, color = siteTreeColors)
+sppColors <- data.frame(spp = siteTreeSpp, color = siteTreeColors, taxonID = siteTreeTaxonID)
 
-# Determine species observed in overstory tree data
-
-# Read in plot locations:
-if (!(exists("plots_poly"))) {
-  plotsxy <- readOGR(dsn="C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\All_NEON_TOS_Plots_V7",layer="All_NEON_TOS_Plot_Points")
-  plots_poly <- readOGR(dsn="C:\\Users\\janer\\Dropbox\\code\\Rcode\\NEON_tutorials\\data\\All_NEON_TOS_Plots_V7",layer="All_NEON_TOS_Plot_Polygons")
-}
+# Subset plots to NEON site of interest, sitei
 plotsi <- plotsxy[which(plotsxy$siteID == sitei & plotsxy$subtype == "basePlot"),]
 polysi <- plots_poly[which(plots_poly$siteID == sitei & plots_poly$subtype == "basePlot"),]
 plotsi_df <- plotsi@data
-# Filter vegind data to one sampling event at site i # DONT USE THIS ANYWHERE
-#treeij <- vegind %>% dplyr::filter(siteID == sitei & eventID == max(events))
-#treeij <- treeij %>% mutate(ba = stemDiameter/2^2 * pi) %>% inner_join(plotsi_df, by=c("plotID"="plotID","siteID"="siteID"))#,"domainID"="domainID"))
 
-# Download more plot-specific AOP tiles of canopy height for ploti
 years <- as.numeric(substr(eventsi, nchar(eventsi)-3, nchar(eventsi)))
 print(years)
 
@@ -186,295 +207,328 @@ for (p in 1:length(plotsi_remeasured)) {
   print(ploti_name)
   yearsp <- c()
 
-veg %>% dplyr::filter(plotID == ploti_name) %>% dplyr::select(subplotID.y, nestedSubplotID) %>% distinct() %>% print()
-
-# Clean up for new run
-if (exists('lastEventYear')) {
-  rm(list = c("lastEventYear", "spbaAll", "vegpliAll", grep("spba2",ls(), value=T), "plotMapMade",
-              grep("vegyrpli", ls(), value=T), grep("live_ba", ls(), value=T), grep("dead_ba", ls(), value=T)),
-              "sppColorsDeadi","sppColorsi","sppColorsLegendi")
-}
-
-# Extract spatial polygon data for this plot
-ploti <- polysi[which(polysi$plotID == ploti_name),]
-crs_ploti <- paste("+proj=","utm ","+zone=",ploti$utmZone," +datum=",ploti$datum," +units=m +no_defs", sep="")
-ploti <- spTransform(ploti, crs_ploti)
-sitei <- ploti$siteID
-ext.ploti <- extent(ploti)
-zoomi <- extent(ext.ploti)
-buff_m <- 10
-zoomi <- zoomi + c(-buff_m,buff_m,-buff_m,buff_m)
-
-# Create a spp code that is a Factor
-vegpli0 <- vegi %>% dplyr::filter(plotID == ploti_name) %>% mutate(sppFactor = as.factor(spp),
-                  growthForm = as.factor(growthForm), plantStatus = as.factor(plantStatus))
-# Clean data for any weird records
-if (sitei == "HARV") {
-  vegpli0 <- vegpli0 %>% dplyr::filter(stemDiameter < 180 | (is.na(stemDiameter)))
-}
-
-vegpli <- vegpli0 %>% dplyr::filter(stemDiameter >= 10)
-vegpliLt10cm <- vegpli0 %>% dplyr::filter(stemDiameter < 10)
-plantStatusTab <- vegpli %>% dplyr::select(plantStatus) %>% group_by(plantStatus) %>% count() %>% mutate(freq_all = n) %>% dplyr::select(plantStatus, freq_all)
-plantStatusLevels <- levels(vegpli$plantStatus)
-
-if (makepdf == "yes") {
-pdf(file = paste("..//figures//", ploti_name, "_tree_composition_change.pdf",sep=""), onefile = T, width = 6, height = 4)
-}
-for (j in 1:length(years)) {
-    yeari <- years[j]
+  veg %>% dplyr::filter(plotID == ploti_name) %>% dplyr::select(subplotID.y, nestedSubplotID) %>% distinct() %>% print()
   
-  #js <- 1:length(eventsi)
-  #yeari <- 2015
-  # Start a counter for year, eventually use a loop
-  #j = grep(yeari, eventsi)
+  # Clean up for new run with new plot
+  if (exists('lastEventYear')) {
+    rm(list = c("lastEventYear", "spbaAll", "vegpliAll", grep("spba2",ls(), value=T), "plotMapMade",
+                grep("vegpliYrj", ls(), value=T), grep("live_ba", ls(), value=T), grep("dead_ba", ls(), value=T)),
+                "sppColorsDeadi","sppColorsi","sppColorsLegendi")
+  }
+  
+  # Extract spatial polygon data for this plot
+  ploti <- polysi[which(polysi$plotID == ploti_name),]
+  crs_ploti <- paste("+proj=","utm ","+zone=",ploti$utmZone," +datum=",ploti$datum," +units=m +no_defs", sep="")
+  ploti <- spTransform(ploti, crs_ploti)
+  sitei <- ploti$siteID
+  ext.ploti <- extent(ploti)
+  zoomi <- extent(ext.ploti)
+  buff_m <- 10
+  zoomi <- zoomi + c(-buff_m,buff_m,-buff_m,buff_m)
 
+  # Subset veg data to plot, Create a spp code that is a Factor. Using taxonID for this step as it is unique (8-char sppcode is not always)
+  vegpli0 <- vegi %>% dplyr::filter(plotID == ploti_name & !(plantStatus == "No longer qualifies")) %>% 
+                    mutate(sppFactor = as.factor(taxonID), growthForm = as.factor(growthForm), 
+                           plantStatus = as.factor(plantStatus))
+  # Add in a factor level for NAs in tree data, then transform NAs in sppFactor to that label
+  levels(vegpli0$sppFactor) <- c(levels(vegpli0$sppFactor), 'NAtaxonID')
+  vegpli0$sppFactor[which(is.na(vegpli0$sppFactor))] <- 'NAtaxonID'
   
-  # Check if there was a measurement event for this plot in yeari. If not move on to next year.
-  if (nrow(vegi %>% dplyr::filter(eventID.x == eventsi[grep(yeari, eventsi)]  & plotID == ploti_name)) > 0 ) {
-      
-    # Create a raster to map out areas of ploti that were sampled at the nested subplot level 40x40m plots
-    subplots0.r <- raster(ncol=2, nrow=2, xmn = ext.ploti[1], xmx = ext.ploti[2], ymn=ext.ploti[3], ymx=ext.ploti[4], crs = crs_ploti )
-    subplots.r <- raster(ncol=4, nrow=4, xmn = ext.ploti[1], xmx = ext.ploti[2], ymn=ext.ploti[3], ymx=ext.ploti[4], crs = crs_ploti)
-    # Set values to the codes explained in the NEON_vegStructure_userGuide_vA.pdf
-    subplot0IDs <- c(39,41,21,23)
-    subplotIDs <- c(rep(c(rep(39,2),rep(41,2)),2), rep(c(rep(21,2),rep(23,2)),2))
-    values(subplots.r) <- subplotIDs
-    nsubplots.r <- raster(ncol=4, nrow=4, xmn = ext.ploti[1], xmx = ext.ploti[2], ymn=ext.ploti[3], ymx=ext.ploti[4], crs = crs_ploti)
-    nsubplotIDs <- rep(c(rep(3:4, 2), rep(1:2,2)),2)
-    values(nsubplots.r) <- nsubplotIDs
-    values(subplots0.r) <- subplot0IDs
-    # Later, you can use these to mask each-other based on data from plots
-    
-    vegyri <- vegpli %>% dplyr::filter(eventID.x == eventsi[grep(yeari, eventsi)])
-    
-    # Look at observation frequency by growthForm
-    table(vegyri$growthForm)
-    #multi-bole tree single bole tree     single shrub       small tree 
-    # Look at vars related to DBH
-    #names(vegyri)[grep('Diameter', names(vegyri))]
-    #[1] "stemDiameter"                  "breakDiameter"                 "maxCrownDiameter"              "ninetyCrownDiameter"          
-    #[5] "basalStemDiameter"             "basalStemDiameterMsrmntHeight" "maxBaseCrownDiameter"          "ninetyBaseCrownDiameter"      
-    #[9] "initialBandStemDiameter"       "bandStemDiameter"
-    
-    totalSampledAreaTreesi <- vplot %>% dplyr::filter(plotID == ploti_name & eventID == eventsi[j]) %>%
-      dplyr::select(totalSampledAreaTrees) %>% unname() %>% unlist() %>% unique()
-    
-    if (nrow(vegyri) > 0 & length(totalSampledAreaTreesi) == 0) {
-      print("There is a problem with event record in vplot dataset, using 800 m  plot size as default")
-      #totalSampledAreaTreesi <- 800
-      # Advance to next year. Require a valid record for tree sampling in vplot table.
-      next()
-    } else {print(paste("totalSampledAreaTrees", yeari, "=", totalSampledAreaTreesi, "m2/ha"))}
-    
-    # Use above to convert basalArea to a per area basis for trees > 10 cm DBH
-    # Narrow it down to one plot for practice, select overstory trees > 10 cm DBH
-    vegyrpli <- vegyri %>% dplyr::filter(plotID == ploti_name & stemDiameter >= 10) %>% 
-      dplyr::select((order(colnames(vegyri)))) %>% mutate(basalAreaM2 = pi*(stemDiameter/100/2)^2, 
-                                                          basalAreaM2ha = basalAreaM2 * 10000/totalSampledAreaTreesi)
-    
-    # Need to also weed out duplicate observations by individual if any occur. Use the most recent date.
-    n_individuals <- vegyrpli %>% group_by(individualID) %>% arrange(individualID) %>% dplyr::select(individualID) %>% n_distinct(., na.rm=T)#slice(which.max(mydates))
-    n_individuals
-    # Check if there are duplicate records for individual trees. But, multibole stems??
-    if (n_individuals < nrow(vegyrpli)) {
-      n_individuals <- vegyrpli %>% group_by(individualID) %>% arrange(individualID) %>% 
-        dplyr::select(individualID) %>% n_distinct(., na.rm=T)#slice(which.max(mydates))
-      
-      # There can still be duplicate records where only difference is field "uid.y". No knowledge yet no how to sort for most recent uid.
-      # Select first record for now. Ask NEON how to determine most recent record when everything else is identical.
-      vegyrpli <- vegyrpli %>% group_by(individualID) %>% arrange(individualID) %>% 
-        dplyr::filter(uid.y == max(uid.y)) %>% 
-        distinct() %>% ungroup()
-      
-    }
-    print(paste('# individuals = ',n_individuals, yeari)) 
-    # Check if there are duplicate records - Want 0 rows duplicated
-    vegyrpli %>% group_by(individualID) %>% filter(n() > 1) %>% as.data.frame()
-    
-    #Look at growth form and plat status
-    vegyrpli %>% dplyr::select(growthForm) %>% table()
-    vegyrpli %>% dplyr::select(plantStatus) %>% table()
-    vegyrpli %>% dplyr::select(remarks.x) %>% table()
-    
-    vegyrpliL <- vegyrpli %>% dplyr::filter(growthForm %in% c("multi-bole tree","single bole tree"),
-                                        grepl("Live", plantStatus))
-    # Found case where "growthForm" was left NA in first year. In this case, use stemDiameter >= 10 to filter to overstory trees.
-    if (nrow(vegyrpliL) == 0) {
-      vegyrpliL <- vegyrpli %>% dplyr::filter(stemDiameter >= 10 &
-                                              grepl("Live", plantStatus))
-    }
-    
-    #vegyrpliL <- vegyrpliL %>% inner_join(vplot, by = c("siteID"="siteID", "eventID.x" = "eventID", "plotID"="plotID"))
-    # Look at live & dead trees per species
-    vegyrpli %>% dplyr::select(sppFactor) %>% table()
-    
-    # Look at live trees per species
-    vegyrpliL %>% dplyr::select(sppFactor) %>% table()
-    #subplotsi <- as.numeric(unique(vegyrpli$subplotID.y))
-    #nsubplotsi <- as.numeric(unique(vegyrpli$nestedSubplotID))
+  # Clean data for any weird records
+  if (sitei == "HARV") {
+    vegpli0 <- vegpli0 %>% dplyr::filter(stemDiameter < 180 | (is.na(stemDiameter)))
+  }
   
-    
-  #################### Section to Plot Subplots Sampled in Eventi yeari for Overstory trees DBH > 10 cm ########
-  ##############################################################################################################
-    ## Only create this plot one time in loop for now. Use a counter
-    if (!(exists("plotMapMade"))) {
-    # mask subplot raster to only show sampled subplots
-    plotIDs.tab <- data.frame(cbind(as.character(subplotIDs), as.character(nsubplotIDs)))
-    names(plotIDs.tab) <- c("subplotIDs","nsubplotIDs")
-    # Determine distinct combo of subplot and nestedsubplot IDs observed in the plot data
-    nsubplots.sampled <- vegyrpli %>% dplyr::select(subplotID.y, nestedSubplotID) %>% distinct()
-    names(nsubplots.sampled) <- names(plotIDs.tab)
-    print(nsubplots.sampled)
-    
-    
-    # Now determine which rows correspond to NOT sampled subplots
-    # If nestedSubPlots were not recorded, use recorded subplots instead
-    if (all(is.na(nsubplots.sampled$nsubplotIDs)) |
-        length(which(paste0(plotIDs.tab$subplotIDs, plotIDs.tab$nsubplotIDs) %in% 
-                     paste0(nsubplots.sampled$subplotIDs, nsubplots.sampled$nsubplotIDs))) == 0) {
-      NArowIDs <- which(!(paste0(plotIDs.tab$subplotIDs) %in% paste0(nsubplots.sampled$subplotIDs)))
-    } else {NArowIDs <- which(!(paste0(plotIDs.tab$subplotIDs, plotIDs.tab$nsubplotIDs) %in% 
-                                  paste0(nsubplots.sampled$subplotIDs, nsubplots.sampled$nsubplotIDs)))}
-    
-    plotIDs.tab[NArowIDs,] <- NA
-    
-    
-    # Plot label coordinates for subplots (plot quarters)
-    subplot.coords <- data.frame(rbind(c("39",ext.ploti[1] + 10, ext.ploti[3] + 30),
-                            c("41",ext.ploti[1] + 30, ext.ploti[3] + 30),
-                            c("21",ext.ploti[1] + 10, ext.ploti[3] + 10),
-                            c("23",ext.ploti[1] + 30, ext.ploti[3] + 10)))
-    
-    
-    #subplotIDs[which(!(subplotIDs %in% subplotsi))] <- NA
-    subplotsVector <- rasterToPolygons(subplots0.r, fun=NULL, n=4, na.rm=TRUE, digits=12, dissolve=FALSE)
-    nsubplotsVector <- rasterToPolygons(nsubplots.r, fun=NULL, n=4, na.rm=TRUE, digits=12, dissolve=FALSE)
-    
-    subplots.r <- raster::setValues(subplots.r, as.numeric(plotIDs.tab$subplotIDs))
-    nsubplots.r <- raster::setValues(subplots.r, as.numeric(plotIDs.tab$nsubplotIDs))
-    plot(nsubplots.r)
-    plot(ploti, add=T)
-    raster::text(nsubplots.r, col=1)
-    
-    # Now overlay vector outlines
-    plot(nsubplotsVector, add=T)
-    raster::text(subplots0.r, col = "darkgrey")
-    mtext(ploti_name)
-    
-    # Now add mapped stems if available
-    datai <- vegmapOut[which(vegmapOut$plotID==ploti_name),]
-    if (nrow(datai) > 0) {
-    points(datai$adjEasting[which(datai$plotID==ploti_name)], 
-         datai$adjNorthing[which(datai$plotID==ploti_name)], 
-         cex=datai$stemDiameter[which(datai$plotID==ploti_name)]/20,pch= plant_status_symbol,bg=plant_status_bg, 
-         xlab="Easting", ylab="Northing")
-    #legend("topright",list_plant_status,pt.bg=plant_status_bg,pch=plant_status_symbol,cex=0.8)
-      }
-      plotMapMade = "yes"
-    }
-    #################### END Section to Plot Subplots Sampled in Eventi yeari for Overstory trees DBH > 10 cm ####
-    ##############################################################################################################  
-    
-    assign(paste('vegyrpliL',yeari, sep=""), vegyrpliL)
-    assign(paste('vegyrpli',yeari, sep=""), vegyrpli)
-    
-    # Compute basal area by species for live and dead trees
-    spbaYeari <- vegyrpliL %>% group_by(sppFactor) %>% mutate(basalAreaM2ha = basalAreaM2 * 10000/totalSampledAreaTreesi) %>% 
-      summarize_at(vars(basalAreaM2ha), list(sum = sum, n = length))
-    totalBasalAreaLiveYeari <- sum(spbaYeari$sum)
-    spbaYeari <- spbaYeari %>% mutate(ba = sum, rba = ba / totalBasalAreaLiveYeari) %>% 
-      dplyr::select(sppFactor, ba, rba, n)
+  # Subset data to trees with stemDiameter > 10 cm (tagged), or less than (saplings)
+  vegpli <- vegpli0 %>% dplyr::filter(stemDiameter >= 10)
+  vegpliLt10cm <- vegpli0 %>% dplyr::filter(stemDiameter < 10 | is.na(stemDiameter))
+  
+  # Check why you may have veg observations with no stemDiameter (should generally be saplings)
+  vegpli0 %>% dplyr::filter(is.na(stemDiameter)) %>% dplyr::select(growthForm, plantStatus) %>% table(useNA = "ifany")
+  
+  # Calculate frequency of plantStatus observed for ploti across all years
+  plantStatusTab <- vegpli %>% dplyr::select(plantStatus) %>% group_by(plantStatus) %>% count() %>%
+                    mutate(freq_all = n) %>% dplyr::select(plantStatus, freq_all) %>% data.frame()
+  plantStatusTab$plantStatusLevels <- levels(plantStatusTab$plantStatus)[plantStatusTab$plantStatus]
+  plantStatusTab <- plantStatusTab %>% inner_join(plant_status_vis, by = c("plantStatus" = "plant_status"))
 
-    # Compute basal area by species for dead trees
-    deadSpbaYeari <- vegyrpli %>% dplyr::filter(plantStatus %in% c("Standing dead", "Dead, broken bole")) %>% 
-      group_by(sppFactor) %>% mutate(basalAreaM2ha = basalAreaM2 * 10000/totalSampledAreaTreesi) %>% 
-      summarize_at(vars(basalAreaM2ha), list(ba = sum, n = length))
-  
-    assign(paste('spba',yeari, sep=""), spbaYeari)
-    assign(paste('deadspba',yeari, sep=""), deadSpbaYeari)
-    # rename vars for a merge spba dataframe
-    names(spbaYeari)[2:ncol(spbaYeari)] <- paste(names(spbaYeari)[2:ncol(spbaYeari)], yeari, sep="_")
-    names(deadSpbaYeari)[2:ncol(deadSpbaYeari)] <- paste(names(deadSpbaYeari)[2:ncol(deadSpbaYeari)], yeari, sep="_")
+  if (makepdf == "yes") {
+  pdf(file = paste("..//figures//", ploti_name, "_tree_composition_change.pdf",sep=""), onefile = T, width = 6, height = 4)
+  }
+  for (j in 1:length(years)) {
+      yearj <- years[j]
     
-    if (!(exists('spbaAll'))) {
-      spbaAll <- spbaYeari
-      deadSpbaAll <- deadSpbaYeari
-      plantStatus2 <- vegyrpliL %>% dplyr::select(plantStatus) %>% count() %>% mutate(year = yeari)
-    } else { 
-      spbaAll <- merge(spbaAll, spbaYeari, by.x='sppFactor', by.y='sppFactor', all=T)
-      deadSpbaAll <- merge(deadSpbaAll, deadSpbaYeari, by.x="sppFactor", by.y="sppFactor", all=T)
-      plantStatusi <- vegyrpliL %>% dplyr::select(plantStatus) %>% count() %>% mutate(year = yeari)
-      plantStatus2 <- rbind(plantStatus2, plantStatusi)
-    }
-    spbaAll <- spbaAll %>% replace(is.na(.), 0)
-    deadSpbaAll <- deadSpbaAll %>% replace(is.na(.), 0)
-    
-    yeariPlantStatus <- vegyrpliL %>% dplyr::select(plantStatus) %>% group_by(plantStatus) %>% count() 
-    names(yeariPlantStatus)[2] <- paste('freq',yeari,sep="_")
-    plantStatusTab <- merge(plantStatusTab, yeariPlantStatus, by.x = 'plantStatus', by.y = 'plantStatus', all=T)
-    plantStatusTab <- plantStatusTab %>% replace(is.na(.), 0)
-    
-    # Create a barplot of basal area by species for current measurement year
-    rangeBA <- c(-0.5* max(spbaAll[,2:ncol(spbaAll)]), max(spbaAll[,2:ncol(spbaAll)]))
-    sppColorsi <- spbaYeari %>% dplyr::select(sppFactor) %>% left_join(sppColors, by = c("sppFactor" = "spp"))
-    
-    baYear1BarPlot <- with(spbaYeari, barplot(unlist(spbaYeari[,2]), names.arg = sppFactor, las = 2, col = sppColorsi$color,
-                                            space = 0.1, axisnames = FALSE, ylab = "BA m2/ha", ylim = rangeBA))
-    abline(h=0)
-    # Now use mtext() for the axis labels
-    text(baYear1BarPlot, rep(rangeBA[1] * 0.1,length(baYear1BarPlot)),spbaYeari$sppFactor, srt = 90, cex = 1.5)
-    mtext(paste(ploti_name, yeari))
-    #########################################################################################################
-    
-    # If yeari Measurement year is not the first, calculate a change over time
-    if (exists('lastEventYear')) {
-      yearsSinceMeasurement <- yeari - lastEventYear
-      spbaLastEventYear <- get(paste("spba", lastEventYear, sep=""))
-      liveBALastEventYear <- sum(spbaLastEventYear$ba)
-      
-      #spbaChange <- spbaYeari %>% group_by(sppFactor, .drop=F) %>% full_join(spbaLastEventYear, by = c("sppFactor" = "sppFactor")) %>% replace(is.na(.), 0) %>%
-      #   mutate(baM2Change = (ba.x - ba.y) / yearsSinceMeasurement, baPercentChange = (ba.x - ba.y)/totalBasalAreaLiveLastEventYear/ yearsSinceMeasurement)
-       
-      spbaChange <- spbaAll %>% mutate(baM2Change = (get(paste('ba',yeari, sep="_")) - get(paste('ba',lastEventYear, sep="_"))) / yearsSinceMeasurement,
-                                       baPercentChange = (get(paste('ba',yeari, sep="_")) - get(paste('ba',lastEventYear, sep="_")))/
-                                         (get(paste('ba',lastEventYear, sep="_")) + 0.000001))
-      
-      rangeChange <- with(spbaChange, range(baM2Change))
-      rangeChangePercent <- with(spbaChange, range(baPercentChange))
-      rangeChangePercent[1] <- max(-1,rangeChangePercent[1])
-      rangeChangePercent[2] <- min(1,rangeChangePercent[2])
-      # Instead hardcode range for % change plots to -+130%
-      rangeChangePercent <- c(-1.3, 1.3)
-      
-      # Now place labels closer to the x axis
-      # set 'axisnames' to FALSE so the default
-      # labels are not drawn. Also note that barplot() 
-      # returns the bar midpoints, so set 'mp' to the return
-      # values
-    
+    # Check if there was a measurement event for this plot in yearj. If not move on to next year.
+    if (nrow(vegpli0 %>% dplyr::filter(eventID.x == eventsi[grep(yearj, eventsi)])) > 0 ) {
         
-      baChangeBarPlot <- with(spbaChange, barplot(baM2Change, names.arg = sppFactor, las = 2, 
-                                                  space = 0.1, axisnames = FALSE, ylab = "BA m2/ha Change yr-1"))
-      abline(h=0)
-      # Now use mtext() for the axis labels
-      text(baChangeBarPlot, rep(rangeChange[which.max(abs(rangeChange))] * 0.10,length(baChangeBarPlot)),spbaChange$sppFactor, srt = 90, cex = 1.5)
-      mtext(paste(ploti_name, yeari,'-', lastEventYear))
-      # Repeat for percent Change
-      varChangeBarPlot <- with(spbaChange, graphics::barplot(baPercentChange, ylim = c(-1,1), names.arg = sppFactor, 
-                                                             las = 2, 
-                                                   space = 0.1, axisnames = FALSE, ylab = "BA % Change"))
-      abline(h=0)
-      # Now use mtext() for the axis labels
-      text(varChangeBarPlot, rep(rangeChangePercent[which.max(abs(rangeChangePercent))] * 0.20,length(varChangeBarPlot)),spbaChange$sppFactor, srt = 90, cex = 1.5)
-      mtext(paste(ploti_name, yeari,'-', lastEventYear))
-    }
+      # Create a raster to map out areas of ploti that were sampled at the nested subplot level 40x40m plots
+      subplots0.r <- raster(ncol=2, nrow=2, xmn = ext.ploti[1], xmx = ext.ploti[2], ymn=ext.ploti[3], ymx=ext.ploti[4], crs = crs_ploti )
+      subplots.r <- raster(ncol=4, nrow=4, xmn = ext.ploti[1], xmx = ext.ploti[2], ymn=ext.ploti[3], ymx=ext.ploti[4], crs = crs_ploti)
+      # Set values to the codes explained in the NEON_vegStructure_userGuide_vA.pdf
+      subplot0IDs <- c(39,41,21,23)
+      subplotIDs <- c(rep(c(rep(39,2),rep(41,2)),2), rep(c(rep(21,2),rep(23,2)),2))
+      values(subplots.r) <- subplotIDs
+      nsubplots.r <- raster(ncol=4, nrow=4, xmn = ext.ploti[1], xmx = ext.ploti[2], ymn=ext.ploti[3], ymx=ext.ploti[4], crs = crs_ploti)
+      nsubplotIDs <- rep(c(rep(3:4, 2), rep(1:2,2)),2)
+      values(nsubplots.r) <- nsubplotIDs
+      values(subplots0.r) <- subplot0IDs
+      # Later, you can use these to mask each-other based on data from plots
+      
+      vegpliYrj <- vegpli %>% dplyr::filter(eventID.x == eventsi[grep(yearj, eventsi)])
+      
+      # Look at observation frequency by growthForm
+      table(vegpliYrj$growthForm)
+      #multi-bole tree single bole tree     single shrub       small tree 
+      # Look at vars related to DBH
+      #names(vegpliYrj)[grep('Diameter', names(vegpliYrj))]
+      #[1] "stemDiameter"                  "breakDiameter"                 "maxCrownDiameter"              "ninetyCrownDiameter"          
+      #[5] "basalStemDiameter"             "basalStemDiameterMsrmntHeight" "maxBaseCrownDiameter"          "ninetyBaseCrownDiameter"      
+      #[9] "initialBandStemDiameter"       "bandStemDiameter"
+      
+      totalSampledAreaTreesij <- vplot %>% dplyr::filter(plotID == ploti_name & eventID == eventsi[j]) %>%
+        dplyr::select(totalSampledAreaTrees) %>% unname() %>% unlist() %>% unique()
+      
+      if (nrow(vegpliYrj) > 0 & length(totalSampledAreaTreesij) == 0) {
+        print("There is a problem with event record in vplot dataset, using 800 m  plot size as default")
+        #totalSampledAreaTreesij <- 800
+        # Advance to next year. Require a valid record for tree sampling in vplot table.
+        next()
+      } else {print(paste("totalSampledAreaTrees", yearj, "=", totalSampledAreaTreesij, "m2/ha"))}
+      
+      # Convert basalArea to a per area basis for trees > 10 cm DBH
+      vegpliYrj <- vegpliYrj %>% dplyr::select((order(colnames(vegpliYrj)))) %>% 
+                      mutate(basalAreaM2 = pi*(stemDiameter/100/2)^2, 
+                      basalAreaM2ha = basalAreaM2 * 10000/totalSampledAreaTreesij)
+      
+      # Need to also weed out duplicate observations by individual if any occur. Use the most recent date.
+      n_individuals <- vegpliYrj %>% group_by(individualID) %>% arrange(individualID) %>% dplyr::select(individualID) %>% 
+                        n_distinct(., na.rm=T)#slice(which.max(mydates))
+      n_individuals
+      # Check if there are duplicate records for individual trees. But, multibole stems??
+      if (n_individuals < nrow(vegpliYrj)) {
+        n_individuals <- vegpliYrj %>% group_by(individualID) %>% arrange(individualID) %>% 
+          dplyr::select(individualID) %>% n_distinct(., na.rm=T)#slice(which.max(mydates))
+        
+        # There can still be duplicate records where only difference is field "uid.y". No knowledge yet no how to sort for most recent uid.
+        # Select first record for now. Ask NEON how to determine most recent record when everything else is identical.
+        vegpliYrj <- vegpliYrj %>% group_by(individualID) %>% arrange(individualID) %>% 
+          dplyr::filter(uid.y == max(uid.y)) %>% 
+          distinct() %>% ungroup()
+        
+      }
+      print(paste('# individuals = ',n_individuals, yearj)) 
+      # Check if there are duplicate records - Want 0 rows duplicated
+      vegpliYrj %>% group_by(individualID) %>% filter(n() > 1) %>% as.data.frame()
+      
+      #Look at growth form and plat status
+      vegpliYrj %>% dplyr::select(growthForm) %>% table(useNA = "ifany")
+      vegpliYrj %>% dplyr::select(plantStatus) %>% table(useNA = "ifany")
+      vegpliYrj %>% dplyr::select(remarks.x) %>% table(useNA = "ifany")
+      
+      vegpliYrjL <- vegpliYrj %>% dplyr::filter(growthForm %in% c("multi-bole tree","single bole tree",NA),
+      
+                                          grepl("Live", plantStatus))
+      # Found case where "growthForm" was left NA in first year. In this case, use stemDiameter >= 10 to filter to overstory trees.
+      if (nrow(vegpliYrjL) == 0) {
+        vegpliYrjL <- vegpliYrj %>% dplyr::filter(stemDiameter >= 10 &
+                                                grepl("Live", plantStatus))
+      }
+      
+       # Look at live & dead trees per species
+      vegpliYrj %>% dplyr::select(sppFactor) %>% table(useNA = "ifany")
+      
+      # Look at live trees per species
+      vegpliYrjL %>% dplyr::select(sppFactor) %>% table(useNA = "ifany")
+      #subplotsi <- as.numeric(unique(vegpliYrj$subplotID.y))
+      #nsubplotsi <- as.numeric(unique(vegpliYrj$nestedSubplotID))
     
+      
+    #################### Section to Plot Subplots Sampled in Eventi yearj for Overstory trees DBH > 10 cm ########
+    ##############################################################################################################
+      ## Only create this plot one time in loop for now. Use a counter
+      if (!(exists("plotMapMade"))) {
+      # mask subplot raster to only show sampled subplots
+      plotIDs.tab <- data.frame(cbind(as.character(subplotIDs), as.character(nsubplotIDs)))
+      names(plotIDs.tab) <- c("subplotIDs","nsubplotIDs")
+      # Determine distinct combo of subplot and nestedsubplot IDs observed in the plot data
+      nsubplots.sampled <- vegpliYrj %>% dplyr::select(subplotID.y, nestedSubplotID) %>% distinct()
+      names(nsubplots.sampled) <- names(plotIDs.tab)
+      print(nsubplots.sampled)
+      
+      # Determine empty subplots to place legend in empty space
+      legendInd <- 0
+      if (41 %notin% nsubplots.sampled$subplotIDs) {
+        legendPos <- "topright"
+        legendInd <- 1
+      }
+      if (39 %notin% nsubplots.sampled$subplotIDs & legendInd == 0) {
+        legendPos <- "topleft"
+        legendInd <- 1
+      }
+      if (23 %notin% nsubplots.sampled$subplotIDs & legendInd == 0) {
+        legendPos <- "bottomright"
+        legendInd <- 1
+      }
+      if (21 %notin% nsubplots.sampled$subplotIDs & legendInd == 0) {
+        legendPos <- "bottomleft"
+        legendInd <- 1
+      }
+      
+      # Now determine which rows correspond to NOT sampled subplots
+      # If nestedSubPlots were not recorded, use recorded subplots instead
+      if (all(is.na(nsubplots.sampled$nsubplotIDs)) |
+          length(which(paste0(plotIDs.tab$subplotIDs, plotIDs.tab$nsubplotIDs) %in% 
+                       paste0(nsubplots.sampled$subplotIDs, nsubplots.sampled$nsubplotIDs))) == 0) {
+        NArowIDs <- which(!(paste0(plotIDs.tab$subplotIDs) %in% paste0(nsubplots.sampled$subplotIDs)))
+      } else {NArowIDs <- which(!(paste0(plotIDs.tab$subplotIDs, plotIDs.tab$nsubplotIDs) %in% 
+                                    paste0(nsubplots.sampled$subplotIDs, nsubplots.sampled$nsubplotIDs)))}
+      
+      plotIDs.tab[NArowIDs,] <- NA
+      
+      
+      # Plot label coordinates for subplots (plot quarters)
+      subplot.coords <- data.frame(rbind(c("39",ext.ploti[1] + 10, ext.ploti[3] + 30),
+                              c("41",ext.ploti[1] + 30, ext.ploti[3] + 30),
+                              c("21",ext.ploti[1] + 10, ext.ploti[3] + 10),
+                              c("23",ext.ploti[1] + 30, ext.ploti[3] + 10)))
+      
+      #subplotIDs[which(!(subplotIDs %in% subplotsi))] <- NA
+      subplotsVector <- rasterToPolygons(subplots0.r, fun=NULL, n=4, na.rm=TRUE, digits=12, dissolve=FALSE)
+      nsubplotsVector <- rasterToPolygons(nsubplots.r, fun=NULL, n=4, na.rm=TRUE, digits=12, dissolve=FALSE)
+      
+      subplots.r <- raster::setValues(subplots.r, as.numeric(plotIDs.tab$subplotIDs))
+      nsubplots.r <- raster::setValues(subplots.r, as.numeric(plotIDs.tab$nsubplotIDs))
+      
+      # Now plot raster of sampled, nested subplots
+      plot(nsubplots.r)
+      plot(ploti, add=T)
+      raster::text(nsubplots.r, col=1)
+      
+      # Now overlay vector outlines
+      plot(nsubplotsVector, add=T)
+      raster::text(subplots0.r, col = "darkgrey")
+      mtext(ploti_name)
+      
+      # Now add mapped stems if available
+      datai <- vegmapOut[which(vegmapOut$plotID==ploti_name),]
+      # Clunky - rewrite at some point
+      datai <-datai %>% dplyr:: select(individualID, eventID, utmZone:adjElevationUncertainty) %>%
+        inner_join(subset(vegpli, select = c(individualID, stemDiameter, eventID.y, spp:sppFactor))) %>% 
+        group_by(individualID) %>% arrange(desc(eventID.y, stemDiameter)) %>% slice(1) %>% ungroup()
+      
+      if (nrow(datai) > 0) {
+        with(datai, points(adjEasting, adjNorthing, cex = stemDiameter/20, pch = plant_status_symbol,
+                           bg = plant_status_bg, xlab = "Easting", ylab = "Northing"))  
 
+        with(plantStatusTab, legend(legendPos, plantStatusLevels, pt.bg = plant_status_bg, pch = plant_status_symbol,
+                                    cex = 0.8, bg = rgb(1, 1, 1, 0.8)))
+      }
+        plotMapMade = "yes"
+      }
+      #################### END Section to Plot Subplots Sampled in Eventi yearj for Overstory trees DBH > 10 cm ####
+      ##############################################################################################################  
+      
+      assign(paste('vegpliYrjL',yearj, sep=""), vegpliYrjL)
+      assign(paste('vegpliYrj',yearj, sep=""), vegpliYrj)
+      
+      # Compute basal area by species for live and dead trees
+      spbaYeari <- vegpliYrjL %>% group_by(sppFactor) %>% mutate(basalAreaM2ha = basalAreaM2 * 10000/totalSampledAreaTreesij) %>% 
+        summarize_at(vars(basalAreaM2ha), list(sum = sum, n = length))
+      totalBasalAreaLiveYeari <- sum(spbaYeari$sum)
+      spbaYeari <- spbaYeari %>% mutate(ba = sum, rba = ba / totalBasalAreaLiveYeari) %>% 
+        dplyr::select(sppFactor, ba, rba, n)
+  
+      # Compute basal area by species for dead trees
+      deadSpbaYeari <- vegpliYrj %>% dplyr::filter(plantStatus %in% c("Standing dead", "Dead, broken bole")) %>% 
+        group_by(sppFactor) %>% mutate(basalAreaM2ha = basalAreaM2 * 10000/totalSampledAreaTreesij) %>% 
+        summarize_at(vars(basalAreaM2ha), list(ba = sum, n = length))
     
-    lastEventYear <- yeari
-    yearsp <- c(yearsp, yeari)
-  } 
+      assign(paste('spba',yearj, sep=""), spbaYeari)
+      assign(paste('deadspba',yearj, sep=""), deadSpbaYeari)
+      # rename vars for a merge spba dataframe
+      names(spbaYeari)[2:ncol(spbaYeari)] <- paste(names(spbaYeari)[2:ncol(spbaYeari)], yearj, sep="_")
+      names(deadSpbaYeari)[2:ncol(deadSpbaYeari)] <- paste(names(deadSpbaYeari)[2:ncol(deadSpbaYeari)], yearj, sep="_")
+      
+      if (!(exists('spbaAll'))) {
+        spbaAll <- spbaYeari
+        deadSpbaAll <- deadSpbaYeari
+        plantStatus2 <- vegpliYrjL %>% dplyr::select(plantStatus) %>% group_by(plantStatus) %>% count() %>% mutate(year = yearj)
+      } else { 
+        spbaAll <- merge(spbaAll, spbaYeari, by.x='sppFactor', by.y='sppFactor', all=T)
+        deadSpbaAll <- merge(deadSpbaAll, deadSpbaYeari, by.x="sppFactor", by.y="sppFactor", all=T)
+        plantStatusi <- vegpliYrjL %>% dplyr::select(plantStatus) %>% count() %>% mutate(year = yearj)
+        plantStatus2 <- rbind(plantStatus2, plantStatusi)
+      }
+      spbaAll <- spbaAll %>% replace(is.na(.), 0)
+      deadSpbaAll <- deadSpbaAll %>% replace(is.na(.), 0)
+      
+      yearjPlantStatus <- vegpliYrjL %>% dplyr::select(plantStatus) %>% group_by(plantStatus) %>% count() 
+      names(yearjPlantStatus)[2] <- paste('freq',yearj,sep="_")
+      plantStatusTab <- merge(plantStatusTab, yearjPlantStatus, by.x = 'plantStatus', by.y = 'plantStatus', all=T)
+      plantStatusTab <- plantStatusTab %>% replace(is.na(.), 0)
+      
+      # Create a barplot of basal area by species for current measurement year
+      rangeBA <- c(-0.5* max(spbaAll[,2:ncol(spbaAll)]), max(spbaAll[,2:ncol(spbaAll)]))
+      sppColorsi <- spbaYeari %>% dplyr::select(sppFactor) %>% left_join(sppColors, by = c("sppFactor" = "taxonID"))
+      
+      baYear1BarPlot <- with(spbaYeari, barplot(unlist(spbaYeari[,2]), names.arg = sppFactor, las = 2, col = sppColorsi$color,
+                                              space = 0.1, axisnames = FALSE, ylab = "BA m2/ha", ylim = rangeBA))
+      abline(h=0)
+      # Now use mtext() for the axis labels
+      text(baYear1BarPlot, rep(rangeBA[1] * 0.1,length(baYear1BarPlot)),spbaYeari$sppFactor, srt = 90, cex = 1.0)
+      mtext(paste(ploti_name, yearj))
+      #########################################################################################################
+      
+      # If yearj Measurement year is not the first, calculate a change over time
+      if (exists('lastEventYear')) {
+        yearsSinceMeasurement <- yearj - lastEventYear
+        spbaLastEventYear <- get(paste("spba", lastEventYear, sep=""))
+        liveBALastEventYear <- sum(spbaLastEventYear$ba)
+        
+        #spbaChange <- spbaYeari %>% group_by(sppFactor, .drop=F) %>% full_join(spbaLastEventYear, by = c("sppFactor" = "sppFactor")) %>% replace(is.na(.), 0) %>%
+        #   mutate(baM2Change = (ba.x - ba.y) / yearsSinceMeasurement, baPercentChange = (ba.x - ba.y)/totalBasalAreaLiveLastEventYear/ yearsSinceMeasurement)
+         
+        spbaChange <- spbaAll %>% mutate(baM2Change = (get(paste('ba',yearj, sep="_")) - get(paste('ba',lastEventYear, sep="_"))) / yearsSinceMeasurement,
+                                         baPercentChange = (get(paste('ba',yearj, sep="_")) - get(paste('ba',lastEventYear, sep="_")))/
+                                           (get(paste('ba',lastEventYear, sep="_")) + 0.000001))
+        
+        rangeChange <- with(spbaChange, range(baM2Change))
+        rangeChangePercent <- with(spbaChange, range(baPercentChange))
+        rangeChangePercent[1] <- max(-1,rangeChangePercent[1])
+        rangeChangePercent[2] <- min(1,rangeChangePercent[2])
+        # Instead hardcode range for % change plots to -+130%
+        rangeChangePercent <- c(-1.3, 1.3)
+        
+        # Now place labels closer to the x axis
+        # set 'axisnames' to FALSE so the default
+        # labels are not drawn. Also note that barplot() 
+        # returns the bar midpoints, so set 'mp' to the return
+        # values
+      
+          
+        baChangeBarPlot <- with(spbaChange, barplot(baM2Change, names.arg = sppFactor, las = 2, 
+                                                    space = 0.1, axisnames = FALSE, ylab = "BA m2/ha Change yr-1"))
+        abline(h=0)
+        # Now use mtext() for the axis labels
+        text(baChangeBarPlot, rep(rangeChange[which.max(abs(rangeChange))] * 0.10,length(baChangeBarPlot)),spbaChange$sppFactor, 
+             srt = 90, cex = 1.0)
+        mtext(paste(ploti_name, yearj,'-', lastEventYear))
+        # Repeat for percent Change
+        varChangeBarPlot <- with(spbaChange, graphics::barplot(baPercentChange, ylim = c(-1,1), names.arg = sppFactor, 
+                                                               las = 2, 
+                                                     space = 0.1, axisnames = FALSE, ylab = "BA % Change"))
+        abline(h=0)
+        # Now use mtext() for the axis labels
+        text(varChangeBarPlot, rep(rangeChangePercent[which.max(abs(rangeChangePercent))] * 0.20,length(varChangeBarPlot)),spbaChange$sppFactor, 
+             srt = 90, cex = 1.0)
+        mtext(paste(ploti_name, yearj,'-', lastEventYear))
+      }
+      
+  
+      
+      lastEventYear <- yearj
+      yearsp <- c(yearsp, yearj)
+    } 
 }
 
 
@@ -482,8 +536,8 @@ for (j in 1:length(years)) {
 # Try to create Alluvial plot of plantStatus Transitions
 # Combine all the byYear dataframes that have been screened for duplicate records etc.
 # Find all the byYear dataframes to bind into one for summaries - include live and dead trees for transitions
-listVegyrpli <- grep("vegyrpli", ls(), value=T)
-listVegyrpli <- listVegyrpli[-grep("vegyrpliL",listVegyrpli)]
+listVegyrpli <- grep("vegpliYrj", ls(), value=T)
+listVegyrpli <- listVegyrpli[-grep("vegpliYrjL",listVegyrpli)]
 listVegyrpli <- listVegyrpli[-1]
 
 vegpliAll <- get(listVegyrpli[1])
@@ -576,10 +630,17 @@ dead_n <- deadSpbaAll %>% dplyr::select(sppFactor, grep("n_", names(deadSpbaAll)
 dead_tot <- dead_n %>% dplyr::select(-sppFactor) %>% summarize_all(list(sum = sum))
 live_tot <- live_n %>% dplyr::select(-sppFactor) %>% summarize_all(list(sum = sum))
 # Update colors to include live and dead species
-sppColorsDeadi <- dead_n %>% dplyr::select(sppFactor) %>% left_join(sppColors, by = c("sppFactor" = "spp"))
+sppColorsi <- live_n %>% dplyr::select(sppFactor) %>% left_join(sppColors, by = c("sppFactor" = "taxonID"))
+sppColorsi$color[which(sppColorsi$sppFactor == "NAtaxonID")] <- "thistle"
+sppColorsDeadi <- dead_n %>% dplyr::select(sppFactor) %>% left_join(sppColors, by = c("sppFactor" = "taxonID"))
 sppColorsLegendi <- rbind(sppColorsi, sppColorsDeadi) %>% distinct()
+sppColorsLegendi <- sppColorsLegendi %>% group_by(sppFactor) %>% slice(1) %>% arrange(spp)
 
+# Set margins with par
+par(mar = c(5.1, 4.1, 2.1, 2.1))
+#
 plot(range(yearsp), c(0, max(live_tot, dead_tot)),type = "n", xlab = "year", ylab = "n stems", axes = F)
+abline(h = 0, lty = 3)
 axis(side = 1, at = yearsp)
 axis(side = 2)
 box()
@@ -592,7 +653,7 @@ box()
    
    }
 mtext(paste("N Stems","   ",ploti_name), line = 0)
-legend("topright", sppColorsLegendi$sppFactor, bty = "n", pt.bg = sppColorsLegendi$color, pch = 21, pt.cex = 1.5)
+legend("topright", sppColorsLegendi$sppFactor, bty = "n", pt.bg = sppColorsLegendi$color, pch = 21, pt.cex = 1)
 legend("topleft", c("live","dead"), bty="n", pch = c(21,23), lty=c(1,2), lwd=c(1.5,1.5), pt.cex = 1.5, 
        pt.bg = rep("white",2), col = c(1,"darkgrey"))
 
@@ -605,6 +666,7 @@ live_ba_tot <- live_ba %>% dplyr::select(-sppFactor) %>% summarize_all(list(sum 
 
 plot(range(yearsp), c(0, max(live_ba_tot, dead_ba_tot)),type = "n", xlab = "year", 
      ylab = "basal area (m2/ha)", axes = F)
+abline(h = 0, lty = 3)
 axis(side = 1, at = yearsp)
 axis(side = 2)
 box()
@@ -617,13 +679,14 @@ for (m in 1:nrow(live_ba)) {
   
 }
 mtext(paste("Basal Area","   ",ploti_name), line = 0)
-legend("topright", sppColorsLegendi$sppFactor, bty = "n", pt.bg = sppColorsLegendi$color, pch = 21, pt.cex = 1.5)
+legend("topright", sppColorsLegendi$sppFactor, bty = "n", pt.bg = sppColorsLegendi$color, pch = 21, pt.cex = 1)
 legend("topleft", c("live","dead"), bty="n", pch = c(21,23), lty=c(1,2), lwd=c(1.5,1.5), pt.cex = 1.5, 
        pt.bg = rep("white",2), col = c(1,"darkgrey"))
 
 # Plot live, dead totals
 plot(range(yearsp), c(0, max(live_ba_tot, dead_ba_tot)),type = "n", xlab = "year", 
      ylab = "basal area (m2/ha)", axes = F)
+abline(h = 0, lty = 3)
 axis(side = 1, at = yearsp)
 axis(side = 2)
 box()
@@ -632,6 +695,8 @@ points(yearsp, live_ba_tot, pch = 21, cex=2, bg = "darkgrey")
 lines(yearsp, dead_ba_tot, lwd = 2, lty = 2, col = "darkgrey")
 points(yearsp, dead_ba_tot, pch = 23, cex=2, bg = "grey")
 mtext(paste("Basal Area","   ",ploti_name), line = 0)
+# Reset margins with par
+par(mar = c(5.1, 4.1, 4.1, 2.1))
 
 if (makepdf == "yes") {
 dev.off()
