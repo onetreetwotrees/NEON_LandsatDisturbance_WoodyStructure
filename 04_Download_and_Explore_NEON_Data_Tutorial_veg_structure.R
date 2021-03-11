@@ -151,7 +151,7 @@ print(n_years_meas)
 #########################################################################################################
 # Determine number of sampling events for a site
 #########################################################################################################
-sitei <- "HARV"
+sitei <- "JERC"
 events <- vegind %>% dplyr::filter(siteID == sitei) %>% dplyr::select(eventID) %>% distinct() %>% unlist()
 events
 
